@@ -1,6 +1,6 @@
 # Employee Communications Analytics
 
-**Fall 2026** · R · Data Analysis
+**November 16, 2026** · R · Data Analysis
 
 ## Project Overview
 
