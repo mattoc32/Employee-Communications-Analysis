@@ -1,6 +1,3 @@
-# Employee-Communications-Analysis
-Exploratory analysis of employee communications performance using R, statistical analysis and data visualization.
-
 # Employee Communications Analytics
 
 **Fall 2026** · R · Data Analytics · Statistical Analysis
