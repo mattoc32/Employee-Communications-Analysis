@@ -1,10 +1,10 @@
 # Employee Communications Analytics
 
-**Fall 2026** · R · Data Analytics · Statistical Analysis
+**Fall 2026** · R · Data Analysis
 
 ## Project Overview
 
-An analysis of employee communications performance on Viva Engage, examining reach, engagement, and link activity across 42 unique posts.
+An analysis of employee communications performance on Viva Engage, with a focus on examining reach, engagement and link activity across 42 unique posts.
 
 ## Key Findings
 
