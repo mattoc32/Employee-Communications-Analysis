@@ -29,7 +29,7 @@ R, RStudio, readxl, dplyr, ggplot2, tidyr, and R Markdown.
 
 Adopt a **two-lane publishing strategy** that aligns communication format with the intended outcome:
 
-- Use announcements when maximizing employee reach is the priority.
-- Use standard posts when encouraging interaction and engagement is the priority.
+- Use announcements while maximizing employee reach.
+- Use standard posts when encouraging interaction and engagement.
 - Evaluate link activity alongside downstream campaign outcomes.
 
