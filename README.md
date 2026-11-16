@@ -8,13 +8,13 @@ An analysis of employee communications performance on Viva Engage, with a focus 
 
 ## Key Findings
 
-- Announcements generated higher median reach.
+- Announcements generated higher median reach rates.
 - Standard posts generated higher median interaction rates.
 - Link activity provides an opportunity to measure campaign outcomes more effectively.
 
 ## Tools Used
 
-R, RStudio, readxl, dplyr, ggplot2, tidyr, and R Markdown.
+R, RStudio, readxl, dplyr, ggplot2, tidyr and R Markdown.
 
 ## Repository Contents
 
@@ -31,6 +31,8 @@ Adopt a **two-lane publishing strategy** that aligns communication format with t
 
 - Use announcements while maximizing employee reach.
 - Use standard posts when encouraging interaction and engagement.
-- Evaluate link activity alongside downstream campaign outcomes.
+- Evaluate link activity alongside campaign outcomes.
 
 ## Leadership Presentation Video Link
+
+https://youtu.be/wgDc11zd0NE
