@@ -34,5 +34,3 @@ Adopt a **two-lane publishing strategy** that aligns communication format with t
 - Evaluate link activity alongside campaign outcomes.
 
 ## Leadership Presentation Video Link
-
-https://youtu.be/wgDc11zd0NE
