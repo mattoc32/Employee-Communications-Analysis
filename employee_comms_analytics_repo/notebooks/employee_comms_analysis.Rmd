@@ -1,0 +1,334 @@
+---
+title: "Employee Communications Analytics"
+author: "Analysis notebook"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    theme: readable
+    df_print: paged
+  pdf_document:
+    toc: true
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 9, fig.height = 5, dpi = 120)
+required <- c("readxl", "dplyr", "tidyr", "ggplot2", "lubridate",
+              "janitor", "scales", "knitr", "stringr")
+missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing)) stop("Install required packages: ", paste(missing, collapse = ", "))
+library(readxl); library(dplyr); library(tidyr); library(ggplot2)
+library(lubridate); library(janitor); library(scales); library(knitr); library(stringr)
+```
+
+# Executive Summary
+
+This report analyzes Viva Engage data for posts published between September 1 to November 30, 2026. The workbook contains 43 observations but 42 distinct observation IDs: one duplicate observation (C109) is removed before analysis.
+
+**Headline Findings**
+
+1. **Announcements are an effective reach strategy, but not an engagement strategy.** The eight announcements reached a median 65.9% of their target audiences, compared with 23.0% for standard posts. Their median interaction rate was lower: 3.0% versus 6.4%.
+2. **Smaller, more focused posts can prompt deeper interaction.** The highest interaction rates came from posts to small audiences (for example, C133 and C101). This suggests that audience relevance and context matter; raw counts and rates should not be compared without considering audience size.
+3. **Links generated meaningful traffic, but link performance needs to be judged against the action prompted.** The 27 linked posts recorded 10,457 clicks in total. Median clicks were 7.5 per 100 unique viewers (clicks divided by unique viewers); this is a post-level diagnostic, not a conversion rate.
+
+**Recommendation:** Use announcements selectively for high-priority, time-sensitive messages where broad reach is the objective. For routine or community-building content, use targeted standard posts and optimize for meaningful interaction. For linked posts, make the call to action explicit and evaluate clicks against the intended outcome.
+
+It is important to note that these are descriptive findings from a small, observational set of data — not proof of causality depicting that the post format caused the outcomes.
+
+# Load and Inspect the Export
+
+The data dictionary defines an *Announcement* as a post that triggers a push notification (an email/Teams alert) to the target audience. A *Standard Post* appears in feeds without that notification. Audience sizes vary, so reach is normalized by target audience size.
+
+```{r load-data}
+candidate_paths <- c(
+  "../data/Employee_Comms_Analytics_Exercise_Dataset.xlsx",
+  "data/Employee_Comms_Analytics_Exercise_Dataset.xlsx",
+  "Employee_Comms_Analytics_Exercise_Dataset.xlsx"
+)
+file_path <- candidate_paths[file.exists(candidate_paths)][1]
+if (is.na(file_path)) stop("Could not find the workbook. Place it in ../data/ or beside this notebook.")
+raw <- read_excel(file_path, sheet = "Communications Data") |>
+  clean_names()
+
+dictionary <- read_excel(file_path, sheet = "Data Dictionary")
+glimpse(raw)
+```
+
+## Data Quality Checks
+
+```{r quality-checks}
+qa <- tibble(
+  check = c("Exported rows", "Distinct post IDs", "Exact duplicate rows",
+            "Duplicate post IDs", "Missing link-click values",
+            "Rows with link included but missing clicks",
+            "Rows without a link but with recorded clicks"),
+  result = c(
+    nrow(raw),
+    n_distinct(raw$comm_id),
+    sum(duplicated(raw)),
+    sum(duplicated(raw$comm_id)),
+    sum(is.na(raw$link_clicks)),
+    sum(raw$link_included == "Yes" & is.na(raw$link_clicks)),
+    sum(raw$link_included == "No" & !is.na(raw$link_clicks))
+  )
+)
+kable(qa, caption = "Initial data-quality review")
+```
+
+There is one exact duplicate (C109). It is removed once.
+
+```{r clean-data}
+posts <- raw |>
+  distinct() |>
+  mutate(
+    publish_date = as.Date(publish_date),
+    month = floor_date(publish_date, unit = "month"),
+    month_label = factor(format(month, "%b"), levels = c("Sep", "Oct", "Nov")),
+    reach_rate = unique_viewers / target_audience_size,
+    total_interactions = reactions + comments + shares,
+    interaction_rate = total_interactions / unique_viewers,
+    views_per_viewer = total_views / unique_viewers,
+    link_ctr_viewers = if_else(link_included == "Yes",
+                               link_clicks / unique_viewers, NA_real_),
+    link_click_rate_audience = if_else(link_included == "Yes",
+                                       link_clicks / target_audience_size, NA_real_)
+  )
+
+stopifnot(nrow(posts) == 42, n_distinct(posts$comm_id) == 42)
+stopifnot(all(posts$unique_viewers <= posts$target_audience_size))
+stopifnot(all(posts$total_views >= posts$unique_viewers))
+```
+
+## Metric Definitions
+
+| Metric | Calculation | Interpretation |
+|---|---|---|
+| Reach rate | Unique viewers / target audience size | Share of the intended audience that viewed the post |
+| Interaction rate | (Reactions + comments + shares) / unique viewers | Recorded interactions per viewer; a viewer may generate multiple interactions |
+| Views per viewer | Total views / unique viewers | Repeat viewing intensity |
+| Link click rate among viewers | Link clicks / unique viewers | Click activity relative to the post's unique viewers; can exceed 100% if repeat clicks are counted |
+
+**Important:** audience size is the post's target audience, not a count of distinct people across the reported . Summing unique viewers across posts does not give quarterly unique reach. Likewise, interactions are event counts, not unique people who engaged.
+
+# Overall Performance
+
+```{r overall-summary}
+overall <- posts |>
+  summarise(
+    posts = n(),
+    target_audience_opportunities = sum(target_audience_size),
+    viewer_events = sum(unique_viewers),
+    total_views = sum(total_views),
+    reactions = sum(reactions),
+    comments = sum(comments),
+    shares = sum(shares),
+    link_clicks = sum(link_clicks, na.rm = TRUE),
+    median_post_reach = median(reach_rate),
+    mean_post_reach = mean(reach_rate),
+    median_interaction_rate = median(interaction_rate),
+    mean_interaction_rate = mean(interaction_rate),
+    median_views_per_viewer = median(views_per_viewer)
+  )
+kable(overall |> mutate(across(where(is.numeric), ~round(.x, 3))),
+      caption = "Quarter summary (viewer events are summed across posts)")
+```
+
+Across the 42 unique posts, the median post reached 26.2% of its target audience. The median interaction rate was 6.1%, and the median number of views per viewer was 1.31. These are medians across posts, so each post contributes equally regardless of its audience size.
+
+```{r overall-distributions}
+p1 <- ggplot(posts, aes(reach_rate)) +
+  geom_histogram(bins = 12, color = "white") +
+  scale_x_continuous(labels = percent_format()) +
+  labs(title = "Distribution of Post Reach Rate", x = "Unique Viewers / Target Audience", y = "Number of Posts") +
+  theme_minimal()
+p2 <- ggplot(posts, aes(interaction_rate)) +
+  geom_histogram(bins = 12, color = "white") +
+  scale_x_continuous(labels = percent_format()) +
+  labs(title = "Distribution of Interaction Rates", x = "Interactions / Unique Viewers", y = "Number of Posts") +
+  theme_minimal()
+p1
+p2
+```
+
+# Finding 1 — Announcements Expand Reach, but do not Create Proportionately More Interaction
+
+```{r format-summary}
+format_summary <- posts |>
+  group_by(post_type) |>
+  summarise(
+    n = n(),
+    median_reach = median(reach_rate),
+    mean_reach = mean(reach_rate),
+    median_interaction_rate = median(interaction_rate),
+    mean_interaction_rate = mean(interaction_rate),
+    median_views_per_viewer = median(views_per_viewer),
+    .groups = "drop"
+  )
+kable(format_summary |> mutate(across(where(is.numeric), ~round(.x, 3))))
+```
+
+The eight announcements had a median reach of **65.9%**, versus **23.0%** for the 34 standard posts. However, the median interaction rate was **3.0%** for announcements versus **6.4%** for standard posts. In this data, the notification feature is associated with a wider distribution, while standard posts are associated with more interaction per viewer. This suggests that reach and engagement are different communication objectives.
+
+```{r format-plot}
+format_long <- posts |>
+  select(post_type, reach_rate, interaction_rate) |>
+  pivot_longer(c(reach_rate, interaction_rate),
+               names_to = "metric", values_to = "rate") |>
+  mutate(metric = recode(metric,
+                         reach_rate = "Reach rate",
+                         interaction_rate = "Interaction rate"))
+ggplot(format_long, aes(post_type, rate)) +
+  geom_boxplot(outlier.shape = NA, width = 0.55) +
+  geom_jitter(width = 0.12, alpha = 0.7, size = 2) +
+  facet_wrap(~metric, scales = "free_y") +
+  scale_y_continuous(labels = percent_format()) +
+  labs(title = "Reach and Interaction by Post Format",
+       x = NULL, y = "Rate") +
+  theme_minimal()
+```
+
+## Statistical Comparison
+
+Because the groups are small and the rates are not guaranteed to be normally distributed, we use a two-sided Wilcoxon rank-sum test as an exploratory comparison. These tests compare distributions and ranks; they do not establish causality.
+
+```{r format-tests}
+reach_test <- wilcox.test(reach_rate ~ post_type, data = posts, exact = FALSE)
+interaction_test <- wilcox.test(interaction_rate ~ post_type, data = posts, exact = FALSE)
+
+test_results <- tibble(
+  outcome = c("Reach rate", "Interaction rate"),
+  announcement_median = c(
+    median(filter(posts, post_type == "Announcement")$reach_rate),
+    median(filter(posts, post_type == "Announcement")$interaction_rate)
+  ),
+  standard_median = c(
+    median(filter(posts, post_type == "Standard Post")$reach_rate),
+    median(filter(posts, post_type == "Standard Post")$interaction_rate)
+  ),
+  p_value = c(reach_test$p.value, interaction_test$p.value)
+)
+kable(test_results |> mutate(across(where(is.numeric), ~round(.x, 4))))
+```
+
+The observed format differences are large and the rank tests return small p-values in this sample. This provides evidence against the hypothesis that distributions for both reach rates and interaction rates are the same for both types of posts (announcement and standard). This suggests that announcements may be reserved for inherently important messages, sent by different people, or aimed at different audiences. Format is therefore can be dependent with message purpose and distribution strategy.
+
+# Finding 2 — Audience Context Matters
+
+A few posts meant for smaller audiences had very high interaction rates. The top examples include C133 (89 interactions among 324 viewers; 27.5%), C101 (86 among 383; 22.5%), and C112 (37 among 211; 17.5%). These posts should not automatically be treated as better than broad-reach communications: they serve different audiences and possibly different objectives.
+
+```{r top-posts}
+top_interaction <- posts |>
+  arrange(desc(interaction_rate)) |>
+  select(comm_id, title, post_type, topic, sender, target_audience_size,
+         unique_viewers, total_interactions, reach_rate, interaction_rate) |>
+  slice_head(n = 8)
+kable(top_interaction |>
+        mutate(reach_rate = percent(reach_rate, accuracy = 0.1),
+               interaction_rate = percent(interaction_rate, accuracy = 0.1)),
+      caption = "Eight posts with the highest interaction rate")
+```
+
+```{r audience-scatter}
+ggplot(posts, aes(reach_rate, interaction_rate, color = post_type,
+                  size = target_audience_size)) +
+  geom_point(alpha = 0.8) +
+  scale_x_continuous(labels = percent_format()) +
+  scale_y_continuous(labels = percent_format()) +
+  scale_size_continuous(labels = label_number(scale_cut = cut_short_scale())) +
+  labs(title = "Reach and Interaction are not the Same Outcome",
+       x = "Reach Rate", y = "Interaction Rate",
+       color = "Post format", size = "Target audience") +
+  theme_minimal()
+```
+
+The chart helps separate broad distribution from active response. A post can have high reach but a low interaction rate, or a smaller reach but a high interaction rate.
+
+# Finding 3 — Link Posts Generated Clicks, but Clicks are not Measurable Outcomes
+
+```{r link-summary}
+linked <- filter(posts, link_included == "Yes")
+link_summary <- linked |>
+  summarise(
+    linked_posts = n(),
+    total_clicks = sum(link_clicks, na.rm = TRUE),
+    median_clicks = median(link_clicks, na.rm = TRUE),
+    median_clicks_per_100_viewers = 100 * median(link_ctr_viewers, na.rm = TRUE),
+    median_clicks_per_100_target_audience = 100 * median(link_click_rate_audience, na.rm = TRUE)
+  )
+kable(link_summary |> mutate(across(where(is.numeric), ~round(.x, 1))))
+```
+
+The 27 posts with links recorded 10,457 clicks. Median click activity was 7.5 clicks per 100 unique viewers or 1.9 clicks per 100 members of the target audience. The data does not tell us whether clicks led to completed forms, enrollments, training or other intended actions. Click counts may also include repeat clicks.
+
+```{r click-chart}
+ggplot(linked, aes(reorder(comm_id, link_clicks), link_clicks, fill = post_type)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Recorded Link Clicks by Linked Post",
+       x = "Post ID", y = "Link Clicks", fill = "Post Format") +
+  theme_minimal()
+```
+
+# Supporting Categories — Topic and Month
+
+These categories are descriptive only. Categories have small sample sizes and are not adjusted for audience size, post format or message purpose.
+
+```{r topic-summary}
+topic_summary <- posts |>
+  group_by(topic) |>
+  summarise(n = n(), median_reach = median(reach_rate),
+            median_interaction = median(interaction_rate), .groups = "drop") |>
+  arrange(desc(median_interaction))
+kable(topic_summary |>
+        mutate(median_reach = percent(median_reach, accuracy = 0.1),
+               median_interaction = percent(median_interaction, accuracy = 0.1)))
+```
+
+```{r topic-chart}
+ggplot(topic_summary, aes(reorder(topic, median_interaction), median_interaction)) +
+  geom_col() + coord_flip() +
+  scale_y_continuous(labels = percent_format()) +
+  labs(title = "Median Interaction Rate by Topic",
+       x = NULL, y = "Median Interaction Rate") +
+  theme_minimal()
+```
+
+```{r month-chart}
+monthly <- posts |>
+  group_by(month_label) |>
+  summarise(posts = n(), median_reach = median(reach_rate),
+            median_interaction = median(interaction_rate), .groups = "drop")
+kable(monthly |> mutate(across(c(median_reach, median_interaction), percent)))
+ggplot(monthly, aes(month_label, median_reach, group = 1)) +
+  geom_line() + geom_point(size = 3) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(title = "Median Post Reach by Month", x = NULL, y = "Median Reach") +
+  theme_minimal()
+```
+
+# Recommendation and Next Steps
+
+**Recommendation:** Adopt a two-lane publishing approach.
+
+- **Use announcements sparingly** For urgent, high-priority or operationally critical information where broad exposure is the primary goal.
+- **Use targeted standard posts** For ongoing culture, recognition, learning and community conversations. Comments, reactions and sharing should be the desired outcome.
+- For every linked campaign, define the intended action before publishing and report completed action (for example, completed survey, enrollment, training completion), not clicks alone.
+
+This recommendation comes from the following observation: announcements were associated with substantially higher reach, while standard posts had higher interaction per viewer. It does not assume that one format is universally better.
+
+## What to Investigate Before Making Firm Conclusions
+
+1. **Audience composition and targeting:** Which communities and employee groups were eligible to see each post? Were the audience sizes accurate and comparable?
+2. **Purpose and urgency:** Were announcements used for more important or mandatory messages? Compare like-for-like topics and objectives.
+3. **Timing and exposure:** Posting time, time zone, competing messages, and duration of exposure may affect performance; the export only provides date/day.
+4. **Content quality:** Test headline, length, visual, call-to-action clarity and sender effects with controlled or matched comparisons.
+
+# Appendix — Reproducibility
+
+```{r session-info}
+sessionInfo()
+```
